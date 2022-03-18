@@ -37,7 +37,7 @@ def percentile_stretch(img, pmin=0., pmax=100.):
     return stretched
 
 
-def img_display(img, ax, bands, stretch_args=None, **imshow_args):
+def img_display(img, ax, bands, alpha=1, stretch_args=None, **imshow_args):
     '''
     This is where you should write a docstring.
     '''
@@ -54,7 +54,7 @@ def img_display(img, ax, bands, stretch_args=None, **imshow_args):
     dispimg = dispimg.transpose([1, 2, 0])
 
     # finally, we display the image
-    handle = ax.imshow(dispimg[:, :, bands], **imshow_args)
+    handle = ax.imshow(dispimg[:, :, bands], alpha=alpha, **imshow_args)
 
     return handle, ax
 
@@ -72,10 +72,30 @@ towns = towns.to_crs(epsg=32629)
 # below - once we get to the end of this statement, the file is closed.
 with rio.open('data_files/NI_Mosaic.tif') as dataset:
     img = dataset.read()
+    #masked_img, transform = mask.mask(dataset, outline['geometry'], crop=False, invert=False)
+    masked_img, transform = mask.mask(dataset, outline['geometry'], crop=False, invert=False, filled=True)
+    outside_img, transform = mask.mask(dataset, outline['geometry'], crop=False, invert=True, filled=False)
+    out_meta = dataset.meta
     xmin, ymin, xmax, ymax = dataset.bounds
 
-with rio.open('data_files/NI_Mosaic.tif') as dataset:
-    masked_img = mask.mask(dataset, outline['geometry'], crop=True)
+print(masked_img)
+
+#    out_meta.update({"driver": "GTiff",
+#                     "height": masked_img.shape[1],
+#                     "width": masked_img.shape[2],
+#                     "transform": transform})
+
+#    with rio.open("masked_img.tif", "w", **out_meta) as dest:
+#        dest.write(masked_img)
+
+#with rio.open('masked_img.tif') as dataset:
+#    img = dataset.read()
+
+#print(img)
+
+
+#with rio.open('data_files/NI_Mosaic.tif') as dataset:
+#    masked_img = mask.mask(dataset, outline['geometry'], crop=True)
 
 # your code goes here!
 plt.ion()
@@ -88,6 +108,13 @@ my_stretch = {'pmin': 0.1, 'pmax': 99.9}
 
 # create a figure of size 10x10 (representing the page size in inches
 fig, ax = plt.subplots(1, 1, figsize=(10, 10), subplot_kw=dict(projection=myCRS))
+
+# add gridlines below
+gridlines = ax.gridlines(draw_labels=True,
+                         xlocs=[-8, -7.5, -7, -6.5, -6, -5.5],
+                         ylocs=[54, 54.5, 55, 55.5])
+gridlines.right_labels = False
+gridlines.bottom_labels = False
 
 xmin, ymin, xmax, ymax = outline.total_bounds
 # using the boundary of the shapefile features, zoom the map to our area of interest
@@ -102,16 +129,28 @@ ax.patch.set_alpha(0)
 # ShapelyFeature creates a polygon, so for point data we can just use ax.plot()
 cities = towns[towns.STATUS == 'City']
 towns_only = towns[towns.STATUS == 'Town']
-city_handle = ax.plot(cities.geometry.x, cities.geometry.y, 'or', ms=6, transform=myCRS)
-town_handle = ax.plot(towns_only.geometry.x, towns_only.geometry.y, 's', color='0.5', ms=6, transform=myCRS)
+city_handles = ax.plot(cities.geometry.x, cities.geometry.y, 'or', ms=6, transform=myCRS)
+town_handles = ax.plot(towns_only.geometry.x, towns_only.geometry.y, 's', color='0.5', ms=6, transform=myCRS)
+
+county_handles = generate_handles([''], ['none'], edge='r')
+handles = county_handles + town_handles + city_handles
+
+ax.legend(handles, ['County Boundaries', 'Town', 'City'], fontsize=10, loc='upper left', framealpha=1)
 
 # add the text labels for the towns and cities
 for i, row in towns.iterrows():
     x, y = row.geometry.x, row.geometry.y
     plt.text(x, y, row['TOWN_NAME'].title(), fontsize=8, transform=myCRS) # use plt.text to place a label at x,y
 
-# Add the raster image
-h, ax = img_display(img, ax, [2, 1, 0], stretch_args=my_stretch, **my_kwargs)
+alpha = masked_img.copy().astype(np.float32)
+alpha[masked_img == 0] = 0.5
+alpha[masked_img != 0] = 1
+#print(alpha)
+# Add the raster image masked by outline
+#h, ax = img_display(masked_img, ax, [2, 1, 0], 1, stretch_args=my_stretch, **my_kwargs)
+# Add background with semi-transpareent (alpha=0.5)
+#h, ax = img_display(outside_img, ax, [2, 1, 0], 1, stretch_args=my_stretch, **my_kwargs)
+#h, ax = img_display(img, ax, [2, 1, 0], 1, stretch_args=my_stretch, **my_kwargs)
 
 # save the figure
 fig.savefig('map.png', dpi=300, bbox_inches='tight')
